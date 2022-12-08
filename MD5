@@ -1,0 +1,10 @@
+8ada542d7957b42fb8099c676cc0caef *DESCRIPTION
+6296901b4b55c715054411220fb16061 *NAMESPACE
+c99fdda9f46031c0b4018a7b9c3e3b98 *R/coxplot.R
+b87a29d21a360ce565843081851abddd *R/npcox.R
+f037bf6ebfb4b0e4bda2dec7cfa46d0a *R/spcox.R
+3e004e84732867dc575590dcbd30d099 *data/pbc.txt.gz
+1e02213cd0eeec6314f8c13436a2bb4e *man/npcox.Rd
+f8140b45d04eb5502934dda0bc8fddac *man/npplot.Rd
+8ade91ac8d7a0ce11a54f86793977b7d *man/pbc.Rd
+be2cc06ac77fcfe78f81937481fda195 *man/spcox.Rd

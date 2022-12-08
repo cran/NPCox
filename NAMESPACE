@@ -1,0 +1,5 @@
+importFrom("graphics", "abline", "lines")
+importFrom("stats", "qnorm", "rexp", "sd")
+export(npcox)
+export(npplot)
+export(spcox)
