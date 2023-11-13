@@ -9,11 +9,11 @@
 #' @param SE Whether or not the estimation of standard error through resampling method will be done. The default value is FALSE.
 #' @param bandwidth Bandwidth for kernel function, which can be specified. The default value is FALSE and can be selected through least prediction error over all subjects.
 #' @param resamp Number of resampling for estimation of pointwise standard error. The default value is 100.
-#' @return a list that contain the estimation result of both temporal (hat{b}(t)) and constant (hat{c}) coefficients, standard error estimation, selected/predesigned bandwidth, dataset, unconverged time points.
+#' @return a list that contain the estimation result of both temporal and constant coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 #' @export
 #' @examples 
 #' data(pbc)
-#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 1500), ] 
+#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
 #' Z1  = as.matrix(pbc[,5])
 #' Z2  = as.matrix(pbc[,c('albumin')])
 #' colnames(Z1) = c('age')
@@ -21,6 +21,7 @@
 #' del = pbc$status
 #' tim = pbc$time
 #' res1 = spcox(cva_cons = Z1, cva_time = Z2, delta = del, obstime = tim, bandwidth = 500)
+
 
 spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 100){
   
@@ -60,8 +61,8 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       for(i in 2:n){ diff[i] = Xs[i] - Xs[i-1] }
       diff  = sort(diff,decreasing = T)
       hmi   = diff[5]
-      sep   = (Xs[n]/3 - Xs[1])/30
-      ha    = seq(max(hmi,Xs[1]), Xs[n]/3, by = sep)
+      sep   = (quantile(Xs,0.85)/3 - Xs[1])/30
+      ha    = seq(max(hmi,Xs[1]), quantile(Xs,0.85), by = sep)
       PErec = array(0, length(ha))
       for(l in 1:length(ha)){
         h    = ha[l]
@@ -71,12 +72,18 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       }
       # Bandwidth selection
       h = ha[which(PErec == min(PErec))]
-      # print(paste("Note: The selected bandwidth is ", h, sep = ""))
+      print(paste("Note: The selected bandwidth is ", h, sep = ""))
     }
     return(h)
   }
   
   cons = function(bhat,h,Zs,ds,Xs){
+    s = r
+    
+    hmin = max(which(Xs<min(Xs)+h))
+    hmax = hmx()-2
+    hmax1 = floor(hmax*0.95)
+    
     bhatcheck = sum(is.na(bhat))
     if(bhatcheck > 0){
       ind1 = which(is.na(bhat[,1]))
@@ -110,11 +117,9 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
     Vbt = array(0, dim = c(n,r,r))
     for(j in 1:n){ Vbt[j,,] = S2[j,,]/S0[j] - fm2(S1[j,]/S0[j] ) }
     
-    hmin = max(which(Xs<min(Xs)+h))
-    hmax = hmx()
     Ibt  = array(0, dim = c(n,r,r))
     Iinv = array(0, dim = c(n,r,r))
-    for(j in hmin:hmax){
+    for(j in hmin:hmax1){
       Ker   = array(n); for(i in 1:n){ Ker[i] = Kh(h,Xs[i]-Xs[j]) }
       non0_i= which(Ker>0)
       min_i = min(non0_i)
@@ -125,19 +130,68 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       Iinv[j,,] = solve(Ibt[j,,])
     }
     Jt    = array(0, dim = c(n,r1,r1))
-    for(i in hmin:hmax){ Jt[i,,] = solve(Iinv[i,1:r1,1:r1]) }# v(c(Jt))
+    for(i in hmin:hmax1){ Jt[i,,] = solve(Iinv[i,1:r1,1:r1]) }# v(c(Jt))
     diff  = Xs
     for(i in 2:n){ diff[i] = Xs[i] - Xs[i-1]}
     Jtint = array(0,dim = c(r1,r1))
-    for(i in hmin:hmax){ Jtint = Jtint + Jt[i,,]*diff[i] }
+    for(i in hmin:hmax1){ Jtint = Jtint + Jt[i,,]*diff[i] }
     wop   = array(0, dim = c(n,r1,r1))
     Jtint_inv = solve(Jtint)
-    for(i in hmin:hmax){ wop[i,,] = Jtint_inv%*%Jt[i,,] }
+    for(i in hmin:hmax1){ wop[i,,] = Jtint_inv%*%Jt[i,,] }
     beta1 = rep(0,r1)
-    for(i in hmin:hmax){ beta1 = beta1 + wop[i,,]%*%bhat[i,1:r1]*diff[i]}
-    beta1_sd = sqrt(diag(Jtint_inv)) # /n
+    for(i in hmin:hmax1){ beta1 = beta1 + wop[i,,]%*%bhat[i,1:r1]*diff[i]}
+    beta1 = c(beta1)
+    beta1_sd = sqrt(diag(Jtint_inv))
     
-    return(data.frame(constant_coef = beta1, constant_coef_SEE = beta1_sd))
+    # Ub = function(beta){
+    #   temp = array(NA,dim = c(n,s))
+    #   S0 = array(n); S0pie = array(n)
+    #   for(i in n:1){
+    #     S0pie[i] = exp(c(beta%*%Zs[i,]))
+    #     if(i == n){ S0[i] = S0pie[i] }else{ S0[i] = S0pie[i] + S0[i+1] } 
+    #   }
+    #   S1 = array(0,dim = c(n,s)); S1pie = array(0,dim = c(n,s))
+    #   for(i in n:1){
+    #     S1pie[i,] = S0pie[i]*Zs[i,]
+    #     if(i == n){ S1[i,] = S1pie[i,] }else{ S1[i,] = S1pie[i,] + S1[i+1,] }
+    #   }
+    #   for(i in 1:n){
+    #     temp[i,] = ds[i]*(Zs[i,] - S1[i,]/S0[i])
+    #   }
+    #   return(colSums(temp))
+    # }
+    # bhat = nleqslv(rep(1,s), Ub)$x
+    # 
+    # Ubb = function(beta){
+    #   temp = array(NA,dim = c(n,s))
+    #   S0 = array(n); S0pie = array(n)
+    #   for(i in n:1){
+    #     S0pie[i] = exp(c(beta%*%Zs[i,]))
+    #     if(i == n){ S0[i] = S0pie[i] }else{ S0[i] = S0pie[i] + S0[i+1] } 
+    #   }
+    #   S1 = array(0,dim = c(n,s)); S1pie = array(0,dim = c(n,s))
+    #   for(i in n:1){
+    #     S1pie[i,] = S0pie[i]*Zs[i,]
+    #     if(i == n){ S1[i,] = S1pie[i,] }else{ S1[i,] = S1pie[i,] + S1[i+1,] }
+    #   }
+    #   
+    #   S2 = array(0,dim = c(n,s,s)); S2pie = array(0,dim = c(n,s,s))
+    #   for(j in n:1){
+    #     S2pie[j,,] = S0pie[j]*Zs[j,]%*%t(Zs[j,])
+    #     if(j == n){S2[j,,] = S2pie[j,,]}else{S2[j,,] = S2pie[j,,] + S2[j+1,,]}
+    #   }
+    #   ldd = array(0,dim = c(n,s,s)); lddpie = array(0,dim = c(n,s,s))
+    #   for(i in 1:n){
+    #     lddpie[i,,] = -ds[i]/(S0[i]^2)*(S0[i]*S2[i,,] - S1[i,]%*%t(S1[i,]))
+    #     if(i == 1){ldd[i,,] = lddpie[i,,]}else{ldd[i,,] = ldd[i-1,,] + lddpie[i,,]}
+    #   }
+    #   
+    #   return(ldd[n,,])
+    # }
+    # SEE = sqrt(diag(solve(-Ubb(bhat))))
+    # ,bhat[1:r1]， SEE[1:r1]
+    
+    return(data.frame(constant_coef = c(beta1), constant_coef_SEE = beta1_sd))
   }
   
   esti = function(h,Zs,ds,Xs){
@@ -282,7 +336,7 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   }
   
   # Rename of covar and obstime
-  # covname = c(colnames(cva_cons), colnames(cva_time))
+  covname = c(colnames(cva_cons), colnames(cva_time))
   Z1  = cva_cons
   Z2  = cva_time
   if(sum(class(Z1) != c('matrix')) == 0) stop("Please transform cva_cons into matrix with specified variable name", call. = FALSE)
@@ -298,14 +352,14 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   
   n   = nrow(Z)
   r1  = ncol(Z1)
-  r2  = ncol(Z2)
+  r2  = length(ncol(Z2))
   r   = r1 + r2
   n1  = length(delta)
   n2  = length(X)
   ind = sum(is.na(Z)) + sum(is.na(delta)) + sum(is.na(X))
   
   # sort order for X
-  XZ  = cbind(X,Z,delta)
+  XZ  = as.matrix(cbind(X,Z,delta))
   sor = XZ[order(XZ[,1]),]
   Xs  = sor[,1]
   Zs  = sor[,(1:r)+1]
@@ -340,10 +394,20 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
     colnames(bhat) = covname
     colnames(bsd)  = paste(covname,"_SEE", sep = "")
     
-    return(list(temporal_coef = bhat[,(1:r2)+r1], temporal_coef_SEE = bsd[,(1:r2)+r1],
-                constant_coef = conres$constant_coef, constant_coef_SEE = conres$constant_coef_SEE,
-                bandwidth = h, data = data,
-                "Time points (not converged)" = paste('obstime = ', Xs[convind], sep = "")))
+    if(r2 > 0){
+      ress = list(temporal_coef = bhat[,(1:r2)+r1], temporal_coef_SEE = bsd[,(1:r2)+r1],
+                  constant_coef = conres$constant_coef, constant_coef_SEE = conres$constant_coef_SEE,
+                  bandwidth = h, data = data,
+                  "Time points (not converged)" = paste('obstime = ', Xs[convind], sep = ""))
+    }else{
+      ress = list(temporal_coef = NULL, temporal_coef_SEE = NULL,
+                  constant_coef = conres$constant_coef, constant_coef_SEE = conres$constant_coef_SEE,
+                  bandwidth = h, data = data,
+                  "Time points (not converged)" = paste('obstime = ', Xs[convind], sep = ""))
+    }
+    return(ress)
   }
 }
+
+
 

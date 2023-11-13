@@ -8,16 +8,18 @@
 #' @param SE Whether or not the estimation of standard error through resampling method will be done. The default value is FALSE.
 #' @param bandwidth Bandwidth for kernel function, which can be specified. The default value is FALSE and can be selected through least prediction error over all subjects.
 #' @param resamp Number of resampling for estimation of pointwise standard error. The default value is 100.
-#' @return a list that contain the estimation result of temporal coefficients (hat{b}(t)), standard error estimation, selected/predesigned bandwidth, dataset, unconverged time points.
+#' @return a list that contain the estimation result of temporal coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 #' @export
-#' @examples 
+#' @examples
 #' data(pbc)
-#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 1500), ] 
+#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
 #' Z   = pbc[,c("age","edema")]
 #' colnames(Z) = c("age","edema")
 #' del = pbc$status
 #' tim = pbc$time
 #' res = npcox(cva = Z,delta = del, obstime = tim, bandwidth = 500)
+
+
 
 npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 100){
   
@@ -47,30 +49,25 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
   band = function(){
     
     if(bandwidth){
-      #print("-----------------------------------------------")
-      #print(paste("Note: The bandwidth is predesigned as ", bandwidth, sep = ""))
       h = bandwidth
     }else{
-      # Prediction error for bandwidth selection
-      #print("-----------------------------------------------")
-      #print("Note: No predesigned bandwidth, commencing bandwidth selection procedure")
-      
       diff  = Xs
       for(i in 2:n){ diff[i] = Xs[i] - Xs[i-1] }
       diff  = sort(diff,decreasing = T)
-      hmi   = diff[5]
-      sep   = (Xs[n]/3 - Xs[1])/30
-      ha    = seq(max(hmi,Xs[1]), Xs[n]/3, by = sep)
+      hmi   = as.numeric(quantile(Xs,0.05))
+      sep   = (as.numeric(quantile(Xs,0.2)) - hmi)/50
+      ha    = seq(hmi, as.numeric(quantile(Xs,0.2)), by = sep)
       PErec = array(0, length(ha))
       for(l in 1:length(ha)){
         h    = ha[l]
-        #print(paste("Calculating PE for h = ",h, sep = ""))
         bhat = esti(h,Zs,ds,Xs)
-        PErec[l] = PE(bhat,Zs,ds,Xs)
+        PErec[l] = PE(bhat$bhat,Zs,ds,Xs)
+        # print(paste(Sys.time(), '  ', l ))
       }
       # Bandwidth selection
-      h = ha[which(PErec == min(PErec))]
-      # print(paste("Note: The selected bandwidth is ", h, sep = ""))
+      h = ha[which(PErec == min(PErec[which(!is.na(PErec))]))]
+      # cbind(ha, PErec)
+      print(paste("Note: The selected bandwidth is ", h, sep = ""))
     }
     return(h)
   }
@@ -228,11 +225,11 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
   ind = sum(is.na(Z)) + sum(is.na(delta)) + sum(is.na(X))
   
   # sort order for X
-  XZ  = cbind(X,Z,delta)
+  XZ  = as.matrix(cbind(X,Z,delta))
   sor = XZ[order(XZ[,1]),]
-  Xs  = sor[,1]
+  Xs  = as.numeric(sor[,1])
   Zs  = as.matrix(sor[,(1:r)+1])
-  ds  = sor[,r+2]
+  ds  = as.numeric(sor[,r+2])
   
   if(n != n1 || n != n2 || n1 != n2){
     return("Incorrect length of covariates, censoring indicator or observed time")
@@ -240,32 +237,35 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
     return("data contains NA's")
   }else{
     h    = band()
-    #print("Commencing estimation of temporal coefficient")
-    tem1 = esti(h,Zs,ds,Xs)
-    bhat = tem1$bhat
-    conv = tem1$conv
-    
-    if(SE){
-      #print("Commencing estimation of standard error")
-      bsd = esti_sd(h,Zs,ds,Xs)
+    if(length(h) == 0){
+      stop('No available bandwidth can be provided, please specify a bandwidth')
     }else{
-      bsd  = array(NA, dim = c(nrow(bhat), ncol(bhat)) )
+      tem1 = esti(h,Zs,ds,Xs)
+      bhat = tem1$bhat
+      conv = tem1$conv
+      
+      if(SE){
+        #print("Commencing estimation of standard error")
+        bsd = esti_sd(h,Zs,ds,Xs)
+      }else{
+        bsd  = array(NA, dim = c(nrow(bhat), ncol(bhat)) )
+      }
+      
+      ind     = conv
+      convind = which(ind == 1)
+      if(length(convind) > 0){
+        bhat[convind,] = NA
+        bsd[convind,]  = NA
+      }
+      data = cbind(Zs, Xs, ds)
+      colnames(data) = c(covname,'obstime','delta')
+      colnames(bhat) = covname
+      colnames(bsd)  = paste(covname,"_SEE", sep = "")
+      
+      return(list(temporal_coef = bhat, temporal_coef_SEE = bsd, bandwidth = h, data = data,
+                  inconverged = convind,
+                  "Time points (not converged)" = paste('obstime = ', Xs[convind], sep = "")))
     }
-    
-    ind     = conv
-    convind = which(ind == 1)
-    if(length(convind) > 0){
-      bhat[convind,] = NA
-      bsd[convind,]  = NA
-    }
-    data = cbind(Zs, Xs, ds)
-    colnames(data) = c(covname,'obstime','delta')
-    colnames(bhat) = covname
-    colnames(bsd)  = paste(covname,"_SEE", sep = "")
-    
-    return(list(temporal_coef = bhat, temporal_coef_SEE = bsd, bandwidth = h, data = data,
-                inconverged = convind,
-                "Time points (not converged)" = paste('obstime = ', Xs[convind], sep = "")))
   }
 }
 

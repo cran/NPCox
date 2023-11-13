@@ -20,7 +20,7 @@ npcox(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 100)
 \item{resamp}{Number of resampling for estimation of pointwise standard error. The default value is 100.}
 }
 \value{
-a list that contain the estimation result of temporal coefficients (hat{b}(t)), standard error estimation, selected/predesigned bandwidth, dataset, unconverged time points.
+a list that contain the estimation result of temporal coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 }
 \description{
 Estimation of proportional hazards (PH) model with time-varying coefficients.
@@ -32,7 +32,7 @@ This is some description of this function.
 }
 \examples{
 data(pbc)
-pbc = pbc[(pbc$time < 3000) & (pbc$time > 1500), ] 
+pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
 Z   = pbc[,c("age","edema")]
 colnames(Z) = c("age","edema")
 del = pbc$status

@@ -30,7 +30,7 @@ spcox(
 \item{resamp}{Number of resampling for estimation of pointwise standard error. The default value is 100.}
 }
 \value{
-a list that contain the estimation result of both temporal (hat{b}(t)) and constant (hat{c}) coefficients, standard error estimation, selected/predesigned bandwidth, dataset, unconverged time points.
+a list that contain the estimation result of both temporal and constant coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 }
 \description{
 Estimation of proportional hazards (PH) model with time-varying coefficients and constant coefficients.
@@ -42,7 +42,7 @@ This is some description of this function.
 }
 \examples{
 data(pbc)
-pbc = pbc[(pbc$time < 3000) & (pbc$time > 1500), ] 
+pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
 Z1  = as.matrix(pbc[,5])
 Z2  = as.matrix(pbc[,c('albumin')])
 colnames(Z1) = c('age')

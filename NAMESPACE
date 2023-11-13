@@ -1,5 +1,6 @@
 importFrom("graphics", "abline", "lines")
-importFrom("stats", "qnorm", "rexp", "sd")
+importFrom("stats", "quantile", "qnorm", "rexp", "sd", "integrate", "runif", "uniroot")
 export(npcox)
-export(npplot)
 export(spcox)
+export(npsimu)
+export(npplot)
