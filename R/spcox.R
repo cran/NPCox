@@ -1,6 +1,6 @@
 #' This is some description of this function.
 #' @title Nonparametric and semiparametric Cox regression model.
-#' @description Estimation of proportional hazards (PH) model with time-varying coefficients and constant coefficients.
+#' @description Estimation of proportional hazards (PH) model with time-varying coefficients and constant coefficients. Users should anticipate a significant increase in estimation time when using the `SE = TRUE` option. Both the number of covariates and the sample size can lead to estimation time increasing quadratically.
 #' @details 'spcox' is designed for PH model with both time-varying and constant coefficients, h(t) = h0(t)exp(b(t)'Z1 + c*Z2), providing estimation of b(t), c and their standard errors.
 #' @param cva_cons Covariate Z1 with constant coefficeint c in h(t) = h0(t)exp(c'Z1 + b(t)'Z2)
 #' @param cva_time Covariate Z2 with time-varying coefficeint b(t) in h(t) = h0(t)exp(c'Z1 + b(t)'Z2)
@@ -13,12 +13,12 @@
 #' @export
 #' @examples 
 #' data(pbc)
-#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
+#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ]
 #' Z1  = as.matrix(pbc[,5])
 #' Z2  = as.matrix(pbc[,c('albumin')])
 #' colnames(Z1) = c('age')
 #' colnames(Z2) = c('albumin')
-#' del = pbc$status
+#' del = sign(pbc$status)
 #' tim = pbc$time
 #' res1 = spcox(cva_cons = Z1, cva_time = Z2, delta = del, obstime = tim, bandwidth = 500)
 
@@ -29,10 +29,15 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   # Bandwidth assignment or selection function
   Kh  = function(h,x){ifelse(abs(x/h)<1, 0.75*(1-(x/h)^2),0)}
   fm2 = function(x){x = array(x,dim = c(length(x),1)); return(x%*%t(x))}
-  hmx = function(){ min(which(Xs>max(obstime)-h)) }# floor(.9*n)min(which(Xs>max(Xs)-h)) - 1
+  hmx = function(){ min(which(Xs>max(obstime)-h)) } # floor(.9*n)min(which(Xs>max(Xs)-h)) - 1
   
   PE   = function(bhat,Zs,ds,Xs){
-    # prediction error calculation, refer to Lutian(2005)
+    n    = floor(nrow(bhat)*0.9)
+    bhat = bhat[1:n,]
+    Zs   = Zs[1:n,]
+    ds   = ds[1:n]
+    Xs   = Xs[1:n]
+    # prediction error calculation, refer to Lu tian(2005)
     bz  = array(0, dim = c(n,n))
     for(i in 1:n){
       for(j in 1:n){
@@ -47,31 +52,33 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   }
   
   band = function(){
-    
     if(bandwidth){
-      # print("--------------------------------------------------------------------")
-      # print(paste("Note: The bandwidth is predesigned as ", bandwidth, sep = ""))
       h = bandwidth
     }else{
-      # Prediction error for bandwidth selection
-      # print("--------------------------------------------------------------------")
-      # print("Note: No predesigned bandwidth, commencing bandwidth selection procedure")
-      
       diff  = Xs
       for(i in 2:n){ diff[i] = Xs[i] - Xs[i-1] }
       diff  = sort(diff,decreasing = T)
-      hmi   = diff[5]
-      sep   = (quantile(Xs,0.85)/3 - Xs[1])/30
-      ha    = seq(max(hmi,Xs[1]), quantile(Xs,0.85), by = sep)
+      hmi   = as.numeric(quantile(Xs,0.05))
+      sep   = (as.numeric(quantile(Xs,0.2)) - hmi)/50
+      ha    = seq(hmi, as.numeric(quantile(Xs,0.2)), by = sep)
       PErec = array(0, length(ha))
       for(l in 1:length(ha)){
         h    = ha[l]
-        #print(paste("Calculating PE for h = ",h, sep = ""))
         bhat = esti(h,Zs,ds,Xs)
-        PErec[l] = PE(bhat,Zs,ds,Xs)
+        # detect NA in bhat and delete them; floor(n*0.75)
+        if(sum(bhat$conv)){
+          for(i in 1:n){
+            if(sum(is.na(bhat$bhat[i,]))){
+              bhat$bhat[i,] = bhat$bhat[i-1,]
+            }
+          }
+        }
+        PErec[l] = PE(bhat$bhat,Zs,ds,Xs)
+        print(paste(Sys.time(), ' ', l ))
       }
       # Bandwidth selection
-      h = ha[which(PErec == min(PErec))]
+      h = ha[which(PErec == min(PErec[which(!is.na(PErec))]))]
+      # cbind(ha, PErec)
       print(paste("Note: The selected bandwidth is ", h, sep = ""))
     }
     return(h)
@@ -115,7 +122,7 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       }
     }
     Vbt = array(0, dim = c(n,r,r))
-    for(j in 1:n){ Vbt[j,,] = S2[j,,]/S0[j] - fm2(S1[j,]/S0[j] ) }
+    for(j in 1:n){ Vbt[j,,] = S2[j,,]/S0[j] - fm2(S1[j,]/S0[j]) }
     
     Ibt  = array(0, dim = c(n,r,r))
     Iinv = array(0, dim = c(n,r,r))
@@ -127,10 +134,17 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       for(i in min_i:max_i){
         Ibt[j,,] = Ibt[j,,] + Vbt[i,,]*Ker[i]*ds[i]/n
       }
-      Iinv[j,,] = solve(Ibt[j,,])
+      temp = abs(det(Ibt[j,,]))
+      if(temp > 1e-8){
+        Iinv[j,,] = solve(Ibt[j,,])
+      }else{
+        if(!is.na(det(Iinv[j-1,,]))){
+          Iinv[j,,] = Iinv[j-1,,]
+        }
+      }
     }
     Jt    = array(0, dim = c(n,r1,r1))
-    for(i in hmin:hmax1){ Jt[i,,] = solve(Iinv[i,1:r1,1:r1]) }# v(c(Jt))
+    for(i in hmin:hmax1){ Jt[i,,] = solve(Iinv[i,1:r1,1:r1]) } # v(c(Jt))
     diff  = Xs
     for(i in 2:n){ diff[i] = Xs[i] - Xs[i-1]}
     Jtint = array(0,dim = c(r1,r1))
@@ -139,59 +153,12 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
     Jtint_inv = solve(Jtint)
     for(i in hmin:hmax1){ wop[i,,] = Jtint_inv%*%Jt[i,,] }
     beta1 = rep(0,r1)
-    for(i in hmin:hmax1){ beta1 = beta1 + wop[i,,]%*%bhat[i,1:r1]*diff[i]}
+    for(i in hmin:hmax1){ beta1 = beta1 + wop[i,,]%*%bhat[i,1:r1]*diff[i] }
     beta1 = c(beta1)
-    beta1_sd = sqrt(diag(Jtint_inv))
+    # beta1_sd = sqrt(diag(Jtint_inv))
+    beta1_see = sqrt(diag(Jtint_inv))
     
-    # Ub = function(beta){
-    #   temp = array(NA,dim = c(n,s))
-    #   S0 = array(n); S0pie = array(n)
-    #   for(i in n:1){
-    #     S0pie[i] = exp(c(beta%*%Zs[i,]))
-    #     if(i == n){ S0[i] = S0pie[i] }else{ S0[i] = S0pie[i] + S0[i+1] } 
-    #   }
-    #   S1 = array(0,dim = c(n,s)); S1pie = array(0,dim = c(n,s))
-    #   for(i in n:1){
-    #     S1pie[i,] = S0pie[i]*Zs[i,]
-    #     if(i == n){ S1[i,] = S1pie[i,] }else{ S1[i,] = S1pie[i,] + S1[i+1,] }
-    #   }
-    #   for(i in 1:n){
-    #     temp[i,] = ds[i]*(Zs[i,] - S1[i,]/S0[i])
-    #   }
-    #   return(colSums(temp))
-    # }
-    # bhat = nleqslv(rep(1,s), Ub)$x
-    # 
-    # Ubb = function(beta){
-    #   temp = array(NA,dim = c(n,s))
-    #   S0 = array(n); S0pie = array(n)
-    #   for(i in n:1){
-    #     S0pie[i] = exp(c(beta%*%Zs[i,]))
-    #     if(i == n){ S0[i] = S0pie[i] }else{ S0[i] = S0pie[i] + S0[i+1] } 
-    #   }
-    #   S1 = array(0,dim = c(n,s)); S1pie = array(0,dim = c(n,s))
-    #   for(i in n:1){
-    #     S1pie[i,] = S0pie[i]*Zs[i,]
-    #     if(i == n){ S1[i,] = S1pie[i,] }else{ S1[i,] = S1pie[i,] + S1[i+1,] }
-    #   }
-    #   
-    #   S2 = array(0,dim = c(n,s,s)); S2pie = array(0,dim = c(n,s,s))
-    #   for(j in n:1){
-    #     S2pie[j,,] = S0pie[j]*Zs[j,]%*%t(Zs[j,])
-    #     if(j == n){S2[j,,] = S2pie[j,,]}else{S2[j,,] = S2pie[j,,] + S2[j+1,,]}
-    #   }
-    #   ldd = array(0,dim = c(n,s,s)); lddpie = array(0,dim = c(n,s,s))
-    #   for(i in 1:n){
-    #     lddpie[i,,] = -ds[i]/(S0[i]^2)*(S0[i]*S2[i,,] - S1[i,]%*%t(S1[i,]))
-    #     if(i == 1){ldd[i,,] = lddpie[i,,]}else{ldd[i,,] = ldd[i-1,,] + lddpie[i,,]}
-    #   }
-    #   
-    #   return(ldd[n,,])
-    # }
-    # SEE = sqrt(diag(solve(-Ubb(bhat))))
-    # ,bhat[1:r1]， SEE[1:r1]
-    
-    return(data.frame(constant_coef = c(beta1), constant_coef_SEE = beta1_sd))
+    return(data.frame(constant_coef = c(beta1), constant_coef_SEE = beta1_see))
   }
   
   esti = function(h,Zs,ds,Xs){
@@ -267,6 +234,9 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
     hmin = max(which(Xs<min(Xs)+h))
     hmax = min(which(Xs>max(Xs)-h)) - 1
     bsd  = array(0,dim = c(n,r))
+    
+    # Create a progress bar object
+    pb = progress_bar$new(total = hmax-hmin+1)
     for(t in hmin:hmax){
       brec     = array(0,dim = c(nit,r))
       brec[1,] = rep(.1,r)
@@ -328,7 +298,13 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
       }else{
         bsd[t,] = apply(betaM, 2, sd)
       }
+      
+      # Update the progress bar
+      pb$tick()
     }
+    
+    # Close the progress bar
+    # pb$close()
     
     for(i in 1:(hmin-1)){ bsd[i,] = bsd[hmin,] }
     for(i in (hmax+1):n){ bsd[i,] = bsd[hmax,] }
@@ -339,6 +315,9 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   covname = c(colnames(cva_cons), colnames(cva_time))
   Z1  = cva_cons
   Z2  = cva_time
+  del1 = length(unique(delta))
+  
+  if(del1 > 2) stop("The delta input contains more than two elements, please check", call. = FALSE)
   if(sum(class(Z1) != c('matrix')) == 0) stop("Please transform cva_cons into matrix with specified variable name", call. = FALSE)
   if(sum(class(Z2) != c('matrix')) == 0) stop("Please transform cva_time into matrix with specified variable name", call. = FALSE)
   if(sum( nchar(colnames(Z1)) == 0 )){   stop("Please transform cva_cons into matrix with specified variable name", call. = FALSE)  }
@@ -347,7 +326,11 @@ spcox = function(cva_cons, cva_time, delta, obstime, SE = FALSE, bandwidth = FAL
   M   = resamp
   
   # Some constants
-  Z   = cbind(Z1,Z2)
+  if(is.null(Z2)){
+    Z = Z1
+  }else{
+    Z   = cbind(Z1,Z2)
+  }
   covname = colnames(Z)
   
   n   = nrow(Z)

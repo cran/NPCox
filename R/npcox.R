@@ -1,6 +1,6 @@
 #' This is some description of this function.
 #' @title Nonparametric and semiparametric Cox regression model.
-#' @description Estimation of proportional hazards (PH) model with time-varying coefficients.
+#' @description Estimation of proportional hazards (PH) model with time-varying coefficients. Users should anticipate a significant increase in estimation time when using the `SE = TRUE` option. Both the number of covariates and the sample size can lead to estimation time increasing quadratically.
 #' @details 'npcox' function is designed for PH model with time-varying coefficients, h(t) = h0(t)exp(b(t)'Z), providing estimation of b(t) and its pointwise standard errors on [bandwidth, max(obstime)-badwidth]. 
 #' @param cva Covariate Z in h(t) = h0(t)exp(b(t)'Z)
 #' @param delta Right censoring indicator for the model
@@ -12,18 +12,19 @@
 #' @export
 #' @examples
 #' data(pbc)
-#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
+#' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ]
 #' Z   = pbc[,c("age","edema")]
 #' colnames(Z) = c("age","edema")
-#' del = pbc$status
+#' del = sign(pbc$status)
 #' tim = pbc$time
 #' res = npcox(cva = Z,delta = del, obstime = tim, bandwidth = 500)
 
-
-
 npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 100){
   
-  Z   = cva
+  Z    = cva
+  del1 = length(unique(delta))
+  
+  if(del1 > 2) stop("The delta input contains more than two elements, please check", call. = FALSE)
   if(sum(class(Z) != c('matrix')) == 0) stop("Please transform covariate into matrix with specified variable name", call. = FALSE)
   if(sum( nchar(colnames(Z)) == 0 )){   stop("Please transform covariate into matrix with specified variable name", call. = FALSE) }
   covname = colnames(cva)
@@ -32,7 +33,12 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
   Kh   = function(h,x){ifelse(abs(x/h)<1, 0.75*(1-(x/h)^2),0)}
   
   PE   = function(bhat,Zs,ds,Xs){
-    # prediction error calculation, refer to Lutian(2005)
+    n    = floor(nrow(bhat)*0.9)
+    bhat = bhat[1:n,]
+    Zs   = Zs[1:n,]
+    ds   = ds[1:n]
+    Xs   = Xs[1:n]
+    # prediction error calculation, refer to Lu tian(2005)
     bz  = array(0, dim = c(n,n))
     for(i in 1:n){
       for(j in 1:n){
@@ -47,7 +53,6 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
   }
   
   band = function(){
-    
     if(bandwidth){
       h = bandwidth
     }else{
@@ -61,8 +66,16 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
       for(l in 1:length(ha)){
         h    = ha[l]
         bhat = esti(h,Zs,ds,Xs)
+        # detect NA in bhat and delete them; floor(n*0.75)
+        if(sum(bhat$conv)){
+          for(i in 1:n){
+            if(sum(is.na(bhat$bhat[i,]))){
+              bhat$bhat[i,] = bhat$bhat[i-1,]
+            }
+          }
+        }
         PErec[l] = PE(bhat$bhat,Zs,ds,Xs)
-        # print(paste(Sys.time(), '  ', l ))
+        print(paste(Sys.time(), ' ', l ))
       }
       # Bandwidth selection
       h = ha[which(PErec == min(PErec[which(!is.na(PErec))]))]
@@ -87,13 +100,13 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
       Ker   = array(n); for(i in 1:n){ Ker[i] = Kh(h,Xs[i]-Xs[t]) }
       non0_i= which(Ker>0)
       min_i = min(non0_i)
-      max_i = max(non0_i)
+      max_i = max(non0_i) # ite = 2
       
       for(ite in 2:nit){
         
         beta = brec[ite-1,]
         
-        G = array(n); Gpie = array(n)
+        G = array(n); Gpie = array(n); # i = n
         for(i in n:min_i){
           Gpie[i] = exp(c(beta%*%Zs[i,]))
           if(i == n){ G[i] = Gpie[i] }else{ G[i] = Gpie[i] + G[i+1] }
@@ -119,7 +132,9 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
           if(i == 1){ldd[i,,] = lddpie[i,,]}else{ldd[i,,] = ldd[i-1,,] + lddpie[i,,]}
         }
         
-        if(abs(det(ldd[max_i,,]))>1e-8){
+        temp1 = ifelse(r>1, det(ldd[max_i,,]), ldd[max_i,,])
+        
+        if(abs(temp1)>1e-8){
           temp = c(solve(ldd[max_i,,])%*%ld[max_i,])
           brec[ite,] = beta - temp
         }else{
@@ -145,6 +160,9 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
     hmin = max(which(Xs<min(Xs)+h))
     hmax = min(which(Xs>max(Xs)-h)) - 1
     bsd  = array(0,dim = c(n,r))
+    
+    # Create a progress bar object
+    pb = progress_bar$new(total = hmax-hmin+1)
     for(t in hmin:hmax){
       brec     = array(0,dim = c(nit,r))
       brec[1,] = rep(.1,r)
@@ -187,7 +205,8 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
             if(i == 1){ldd[i,,] = lddpie[i,,]}else{ldd[i,,] = ldd[i-1,,] + lddpie[i,,]}
           }
           
-          if(abs(det(ldd[max_i,,]))>1e-8){
+          temp1 = ifelse(r>1, det(ldd[max_i,,]), ldd[max_i,,])
+          if(abs(temp1)>1e-8){
             temp = c(solve(ldd[max_i,,])%*%ld[max_i,])
             brec[ite,] = beta - temp
           }else{
@@ -206,7 +225,13 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
       }else{
         bsd[t,] = apply(betaM, 2, sd)
       }
+      
+      # Update the progress bar
+      pb$tick()
     }
+    
+    # Close the progress bar
+    # pb$close()
     
     for(i in 1:(hmin-1)){ bsd[i,] = bsd[hmin,] }
     for(i in (hmax+1):n){ bsd[i,] = bsd[hmax,] }
@@ -268,5 +293,3 @@ npcox = function(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 10
     }
   }
 }
-
-

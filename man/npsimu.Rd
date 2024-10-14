@@ -20,7 +20,7 @@ An example of data generation for nonparametric PH model.
 \details{
 This is some description of this function.
 
-'np_simudata' is designed for PH model with time-varying coefficients, h(t) = h0(t)exp(b(t)'Z), generating the covariates, observed time and censoring indicator.
+'npsimu' is designed for PH model with time-varying coefficients, h(t) = h0(t)exp(b(t)'Z), generating the covariates, observed time and censoring indicator.
 }
 \examples{
 data = npsimu(200)

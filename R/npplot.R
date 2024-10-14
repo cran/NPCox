@@ -12,7 +12,7 @@
 #' pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
 #' Z   = pbc[,c("age","edema")]
 #' colnames(Z) = c("age","edema")
-#' del = pbc$status
+#' del = sign(pbc$status)
 #' tim = pbc$time
 #' res = npcox(cva = Z,delta = del, obstime = tim, bandwidth = 500)
 #' op  = par(mfrow = c(1,2))

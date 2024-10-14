@@ -33,7 +33,7 @@ spcox(
 a list that contain the estimation result of both temporal and constant coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 }
 \description{
-Estimation of proportional hazards (PH) model with time-varying coefficients and constant coefficients.
+Estimation of proportional hazards (PH) model with time-varying coefficients and constant coefficients. Users should anticipate a significant increase in estimation time when using the `SE = TRUE` option. Both the number of covariates and the sample size can lead to estimation time increasing quadratically.
 }
 \details{
 This is some description of this function.
@@ -42,12 +42,12 @@ This is some description of this function.
 }
 \examples{
 data(pbc)
-pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
+pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ]
 Z1  = as.matrix(pbc[,5])
 Z2  = as.matrix(pbc[,c('albumin')])
 colnames(Z1) = c('age')
 colnames(Z2) = c('albumin')
-del = pbc$status
+del = sign(pbc$status)
 tim = pbc$time
 res1 = spcox(cva_cons = Z1, cva_time = Z2, delta = del, obstime = tim, bandwidth = 500)
 }

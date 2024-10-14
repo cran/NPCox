@@ -23,7 +23,7 @@ npcox(cva, delta, obstime, SE = FALSE, bandwidth = FALSE, resamp = 100)
 a list that contain the estimation result of temporal coefficients, standard error estimation, selected or predesigned bandwidth, dataset, unconverged time points.
 }
 \description{
-Estimation of proportional hazards (PH) model with time-varying coefficients.
+Estimation of proportional hazards (PH) model with time-varying coefficients. Users should anticipate a significant increase in estimation time when using the `SE = TRUE` option. Both the number of covariates and the sample size can lead to estimation time increasing quadratically.
 }
 \details{
 This is some description of this function.
@@ -32,10 +32,10 @@ This is some description of this function.
 }
 \examples{
 data(pbc)
-pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ] 
+pbc = pbc[(pbc$time < 3000) & (pbc$time > 800), ]
 Z   = pbc[,c("age","edema")]
 colnames(Z) = c("age","edema")
-del = pbc$status
+del = sign(pbc$status)
 tim = pbc$time
 res = npcox(cva = Z,delta = del, obstime = tim, bandwidth = 500)
 }

@@ -1,7 +1,7 @@
 #' This is some description of this function.
 #' @title Simulation data generation of PH model with time-varying coefficients.
 #' @description An example of data generation for nonparametric PH model.
-#' @details 'np_simudata' is designed for PH model with time-varying coefficients, h(t) = h0(t)exp(b(t)'Z), generating the covariates, observed time and censoring indicator.
+#' @details 'npsimu' is designed for PH model with time-varying coefficients, h(t) = h0(t)exp(b(t)'Z), generating the covariates, observed time and censoring indicator.
 #' @param n The number of sample size, which can be self-determined.
 #' @param cenpara Censoring parameter, which is supposed to be positive, for adjustment of censoring rate.
 #' @return a list that contain covariates, observed time and censoring indicator.
